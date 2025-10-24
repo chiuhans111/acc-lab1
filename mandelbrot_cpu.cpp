@@ -6,13 +6,17 @@
 #include <cmath>
 #include <cstdint>
 #include <immintrin.h>
+#include <iostream>
 
 // CPU Scalar Mandelbrot set generation.
 // Based on the "optimized escape time algorithm" in
 // https://en.wikipedia.org/wiki/Plotting_algorithms_for_the_Mandelbrot_set
-void mandelbrot_cpu_scalar(uint32_t img_size, uint32_t max_iters, uint32_t *out) {
-    for (uint64_t i = 0; i < img_size; ++i) {
-        for (uint64_t j = 0; j < img_size; ++j) {
+void mandelbrot_cpu_scalar(uint32_t img_size, uint32_t max_iters, uint32_t *out)
+{
+    for (uint64_t i = 0; i < img_size; ++i)
+    {
+        for (uint64_t j = 0; j < img_size; ++j)
+        {
             // Get the plane coordinate X for the image pixel.
             float cx = (float(j) / float(img_size)) * 2.5f - 2.0f;
             float cy = (float(i) / float(img_size)) * 2.5f - 1.25f;
@@ -22,7 +26,8 @@ void mandelbrot_cpu_scalar(uint32_t img_size, uint32_t max_iters, uint32_t *out)
             float y2 = 0.0f;
             float w = 0.0f;
             uint32_t iters = 0;
-            while (x2 + y2 <= 4.0f && iters < max_iters) {
+            while (x2 + y2 <= 4.0f && iters < max_iters)
+            {
                 float x = x2 - y2 + cx;
                 float y = w - x2 - y2 + cy;
                 x2 = x * x;
@@ -40,8 +45,97 @@ void mandelbrot_cpu_scalar(uint32_t img_size, uint32_t max_iters, uint32_t *out)
 
 /// <--- your code here --->
 
-void mandelbrot_cpu_vector(uint32_t img_size, uint32_t max_iters, uint32_t *out) {
+void log_m256i(__m256i v)
+{
+    // 1. Declare a temporary array on the stack.
+    uint32_t u[8];
+    // 2. Store the contents of the 'iters' vector into the array.
+    _mm256_storeu_si256((__m256i *)u, v);
+    std::cout << "[";
+    for (int k = 0; k < 8; ++k)
+    {
+        std::cout << u[k] << (k == 7 ? "" : ", ");
+    }
+    std::cout << "]";
+}
+
+void mandelbrot_cpu_vector(uint32_t img_size, uint32_t max_iters, uint32_t *out)
+{
     // TODO: Implement this function.
+
+    __m256i arange = _mm256_set_epi32(7, 6, 5, 4, 3, 2, 1, 0);
+    __m256i one = _mm256_set1_epi32(1);
+
+    float scale = 2.5f / float(img_size);
+    __m256 scale_v = _mm256_set1_ps(scale);
+    __m256 img_size_v = _mm256_set1_ps(float(img_size));
+    __m256 radius = _mm256_set1_ps(4.0f);
+
+    __m256i max_iters_v = _mm256_set1_epi32(max_iters);
+
+    for (uint64_t i = 0; i < img_size; ++i)
+    {
+        __m256 cy = _mm256_set1_ps((float(i) / img_size) * 2.5f - 1.25f);
+
+        for (uint64_t j = 0; j < img_size; j += 8)
+        {
+            // Get the plane coordinate X for the image pixel.
+            // float cx = (float(j) / float(img_size)) * 2.5f - 2.0f;
+            // float cy = (float(i) / float(img_size)) * 2.5f - 1.25f;
+            __m256i j_v = _mm256_add_epi32(_mm256_set1_epi32(j), arange);
+            __m256 j_f = _mm256_div_ps(_mm256_cvtepi32_ps(j_v), img_size_v);
+            __m256 c0 = _mm256_mul_ps(j_f, _mm256_set1_ps(2.5f));
+            __m256 cx = _mm256_add_ps(c0, _mm256_set1_ps(-2.0f));
+
+            // Innermost loop: start the recursion from z = 0.
+            // float x2 = 0.0f;
+            // float y2 = 0.0f;
+            // float w = 0.0f;
+            // uint32_t iters = 0;
+
+            __m256 x2 = _mm256_set1_ps(0.0f);
+            __m256 y2 = _mm256_set1_ps(0.0f);
+            __m256 w = _mm256_set1_ps(0.0f);
+
+            __m256i iters = _mm256_set1_epi32(0);
+
+            __m256 mask = _mm256_castsi256_ps(_mm256_set1_epi32(-1));
+
+            while (true)
+            {
+                mask = _mm256_and_ps(mask, _mm256_and_ps(
+                                               _mm256_cmp_ps(_mm256_add_ps(x2, y2), radius, _CMP_LE_OS),
+                                               _mm256_castsi256_ps(_mm256_cmpgt_epi32(max_iters_v, iters))));
+
+                if (!_mm256_movemask_ps(mask))
+                    break;
+                iters = _mm256_add_epi32(iters, _mm256_and_si256(_mm256_castps_si256(mask), one));
+
+                // float x = x2 - y2 + cx;
+                // float y = w - x2 - y2 + cy;
+                // x2 = x * x;
+                // y2 = y * y;
+                // float z = x + y;
+                // w = z * z;
+                // ++iters;
+
+                __m256 x2_sub_y2 = _mm256_sub_ps(x2, y2);
+                __m256 x = _mm256_add_ps(x2_sub_y2, cx);
+                __m256 cy_sub_y2 = _mm256_sub_ps(cy, y2);
+                __m256 w_sub_x2 = _mm256_sub_ps(w, x2);
+                __m256 w_sub_x2_y2 = _mm256_sub_ps(w_sub_x2, y2);
+                __m256 y = _mm256_add_ps(w_sub_x2_y2, cy);
+                __m256 z = _mm256_add_ps(x, y);
+                x2 = _mm256_mul_ps(x, x);
+                y2 = _mm256_mul_ps(y, y);
+                w = _mm256_mul_ps(z, z);
+            }
+
+            // Write result.
+            // out[i * img_size + j] = iters;
+            _mm256_storeu_si256((__m256i *)(out + i * img_size + j), iters);
+        }
+    }
 }
 
 /// <--- /your code here --->
@@ -56,12 +150,16 @@ void mandelbrot_cpu_vector(uint32_t img_size, uint32_t max_iters, uint32_t *out)
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
-#include <iostream>
 #include <sys/types.h>
 #include <vector>
 
 // Useful functions and structures.
-enum MandelbrotImpl { SCALAR, VECTOR, ALL };
+enum MandelbrotImpl
+{
+    SCALAR,
+    VECTOR,
+    ALL
+};
 
 // Command-line arguments parser.
 int ParseArgsAndMakeSpec(
@@ -69,45 +167,69 @@ int ParseArgsAndMakeSpec(
     char *argv[],
     uint32_t *img_size,
     uint32_t *max_iters,
-    MandelbrotImpl *impl) {
+    MandelbrotImpl *impl)
+{
     char *implementation_str = nullptr;
 
-    for (int i = 1; i < argc; i++) {
-        if (strcmp(argv[i], "-r") == 0) {
-            if (i + 1 < argc) {
+    for (int i = 1; i < argc; i++)
+    {
+        if (strcmp(argv[i], "-r") == 0)
+        {
+            if (i + 1 < argc)
+            {
                 *img_size = atoi(argv[++i]);
-                if (*img_size % 32 != 0) {
+                if (*img_size % 32 != 0)
+                {
                     std::cerr << "Error: Image width must be a multiple of 32"
                               << std::endl;
                     return 1;
                 }
-            } else {
+            }
+            else
+            {
                 std::cerr << "Error: No value specified for -r" << std::endl;
                 return 1;
             }
-        } else if (strcmp(argv[i], "-b") == 0) {
-            if (i + 1 < argc) {
+        }
+        else if (strcmp(argv[i], "-b") == 0)
+        {
+            if (i + 1 < argc)
+            {
                 *max_iters = atoi(argv[++i]);
-            } else {
+            }
+            else
+            {
                 std::cerr << "Error: No value specified for -b" << std::endl;
                 return 1;
             }
-        } else if (strcmp(argv[i], "-i") == 0) {
-            if (i + 1 < argc) {
+        }
+        else if (strcmp(argv[i], "-i") == 0)
+        {
+            if (i + 1 < argc)
+            {
                 implementation_str = argv[++i];
-                if (strcmp(implementation_str, "scalar") == 0) {
+                if (strcmp(implementation_str, "scalar") == 0)
+                {
                     *impl = SCALAR;
-                } else if (strcmp(implementation_str, "vector") == 0) {
+                }
+                else if (strcmp(implementation_str, "vector") == 0)
+                {
                     *impl = VECTOR;
-                } else {
+                }
+                else
+                {
                     std::cerr << "Error: unknown implementation" << std::endl;
                     return 1;
                 }
-            } else {
+            }
+            else
+            {
                 std::cerr << "Error: No value specified for -i" << std::endl;
                 return 1;
             }
-        } else {
+        }
+        else
+        {
             std::cerr << "Unknown flag: " << argv[i] << std::endl;
             return 1;
         }
@@ -120,7 +242,8 @@ int ParseArgsAndMakeSpec(
 
 // Output image writers: BMP file header structure
 #pragma pack(push, 1)
-struct BMPHeader {
+struct BMPHeader
+{
     uint16_t fileType{0x4D42};   // File type, always "BM"
     uint32_t fileSize{0};        // Size of the file in bytes
     uint16_t reserved1{0};       // Always 0
@@ -140,7 +263,8 @@ struct BMPHeader {
 };
 #pragma pack(pop)
 
-void writeBMP(const char *fname, uint32_t img_size, const std::vector<uint8_t> &pixels) {
+void writeBMP(const char *fname, uint32_t img_size, const std::vector<uint8_t> &pixels)
+{
     uint32_t width = img_size;
     uint32_t height = img_size;
 
@@ -158,16 +282,20 @@ void writeBMP(const char *fname, uint32_t img_size, const std::vector<uint8_t> &
 std::vector<uint8_t> iters_to_colors(
     uint32_t img_size,
     uint32_t max_iters,
-    const std::vector<uint32_t> &iters) {
+    const std::vector<uint32_t> &iters)
+{
     uint32_t width = img_size;
     uint32_t height = img_size;
     auto pixel_data = std::vector<uint8_t>(width * height * 3);
-    for (uint32_t i = 0; i < height; i++) {
-        for (uint32_t j = 0; j < width; j++) {
+    for (uint32_t i = 0; i < height; i++)
+    {
+        for (uint32_t j = 0; j < width; j++)
+        {
             uint32_t iter = iters[i * width + j];
 
             uint8_t r = 0, g = 0, b = 0;
-            if (iter < max_iters) {
+            if (iter < max_iters)
+            {
                 auto log_iter = log2f(static_cast<float>(iter));
                 auto intensity = static_cast<uint8_t>(
                     log_iter * 222 / log2f(static_cast<float>(max_iters)));
@@ -188,32 +316,38 @@ std::vector<uint8_t> iters_to_colors(
 // Benchmarking macros and configuration.
 static constexpr size_t kNumOfOuterIterations = 10;
 static constexpr size_t kNumOfInnerIterations = 1;
-#define BENCHPRESS(func, ...) \
-    do { \
-        std::cout << "Running " << #func << " ...\n"; \
-        std::vector<double> times(kNumOfOuterIterations); \
-        for (size_t i = 0; i < kNumOfOuterIterations; ++i) { \
-            auto start = std::chrono::high_resolution_clock::now(); \
-            for (size_t j = 0; j < kNumOfInnerIterations; ++j) { \
-                func(__VA_ARGS__); \
-            } \
-            auto end = std::chrono::high_resolution_clock::now(); \
+#define BENCHPRESS(func, ...)                                                            \
+    do                                                                                   \
+    {                                                                                    \
+        std::cout << "Running " << #func << " ...\n";                                    \
+        std::vector<double> times(kNumOfOuterIterations);                                \
+        for (size_t i = 0; i < kNumOfOuterIterations; ++i)                               \
+        {                                                                                \
+            auto start = std::chrono::high_resolution_clock::now();                      \
+            for (size_t j = 0; j < kNumOfInnerIterations; ++j)                           \
+            {                                                                            \
+                func(__VA_ARGS__);                                                       \
+            }                                                                            \
+            auto end = std::chrono::high_resolution_clock::now();                        \
             times[i] = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start) \
-                           .count() / \
-                kNumOfInnerIterations; \
-        } \
-        std::sort(times.begin(), times.end()); \
-        std::cout << "  Runtime: " << times[0] / 1'000'000 << " ms" << std::endl; \
+                           .count() /                                                    \
+                       kNumOfInnerIterations;                                            \
+        }                                                                                \
+        std::sort(times.begin(), times.end());                                           \
+        std::cout << "  Runtime: " << times[0] / 1'000'000 << " ms" << std::endl;        \
     } while (0)
 
 double difference(
     uint32_t img_size,
     uint32_t max_iters,
     std::vector<uint32_t> &result,
-    std::vector<uint32_t> &ref_result) {
+    std::vector<uint32_t> &ref_result)
+{
     int64_t diff = 0;
-    for (uint32_t i = 0; i < img_size; i++) {
-        for (uint32_t j = 0; j < img_size; j++) {
+    for (uint32_t i = 0; i < img_size; i++)
+    {
+        for (uint32_t j = 0; j < img_size; j++)
+        {
             diff +=
                 abs(int(result[i * img_size + j]) - int(ref_result[i * img_size + j]));
         }
@@ -225,7 +359,8 @@ void dump_image(
     const char *fname,
     uint32_t img_size,
     uint32_t max_iters,
-    const std::vector<uint32_t> &iters) {
+    const std::vector<uint32_t> &iters)
+{
     // Dump result as an image.
     auto pixel_data = iters_to_colors(img_size, max_iters, iters);
     writeBMP(fname, img_size, pixel_data);
@@ -234,7 +369,8 @@ void dump_image(
 // Main function.
 // Compile with:
 //  g++ -march=native -O3 -Wall -Wextra -o mandelbrot mandelbrot_cpu.cc
-int main(int argc, char *argv[]) {
+int main(int argc, char *argv[])
+{
     // Get Mandelbrot spec.
     uint32_t img_size = 256;
     uint32_t max_iters = 1000;
@@ -250,13 +386,15 @@ int main(int argc, char *argv[]) {
     mandelbrot_cpu_scalar(img_size, max_iters, ref_result.data());
 
     // Test the desired kernels.
-    if (impl == SCALAR || impl == ALL) {
+    if (impl == SCALAR || impl == ALL)
+    {
         memset(result.data(), 0, sizeof(uint32_t) * img_size * img_size);
         BENCHPRESS(mandelbrot_cpu_scalar, img_size, max_iters, result.data());
         dump_image("out/mandelbrot_cpu_scalar.bmp", img_size, max_iters, result);
     }
 
-    if (impl == VECTOR || impl == ALL) {
+    if (impl == VECTOR || impl == ALL)
+    {
         memset(result.data(), 0, sizeof(uint32_t) * img_size * img_size);
         BENCHPRESS(mandelbrot_cpu_vector, img_size, max_iters, result.data());
         dump_image("out/mandelbrot_cpu_vector.bmp", img_size, max_iters, result);
