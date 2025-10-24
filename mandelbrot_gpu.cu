@@ -55,10 +55,11 @@ __global__ void mandelbrot_gpu_vector(
     uint32_t max_iters,
     uint32_t *out /* pointer to GPU memory */
 ) {
+
+
     /* your (GPU) code here... */
-    /* your (GPU) code here... */
-    for (uint64_t i = 0; i < img_size; i+=1) {
-        for (uint64_t j = threadIdx.x; j < img_size; j+=32) {
+    for (uint64_t i = threadIdx.x/32; i < img_size; i+=32) {
+        for (uint64_t j = threadIdx.x%32; j < img_size; j+=32) {
             // Get the plane coordinate X for the image pixel.
             float cx = (float(j) / float(img_size)) * 2.5f - 2.0f;
             float cy = (float(i) / float(img_size)) * 2.5f - 1.25f;
@@ -77,7 +78,6 @@ __global__ void mandelbrot_gpu_vector(
                 w = z * z;
                 ++iters;
             }
-
             // Write result.
             out[i * img_size + j] = iters;
         }
@@ -90,7 +90,7 @@ void launch_mandelbrot_gpu_vector(
     uint32_t *out /* pointer to GPU memory */
 ) {
     /* your (CPU) code here... */
-    mandelbrot_gpu_vector<<<1, 32>>>(img_size, max_iters, out);
+    mandelbrot_gpu_vector<<<1, 1024>>>(img_size, max_iters, out);
 
 }
 
