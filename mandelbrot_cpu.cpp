@@ -63,29 +63,28 @@ void mandelbrot_cpu_vector(uint32_t img_size, uint32_t max_iters, uint32_t *out)
 {
     // TODO: Implement this function.
 
-    __m256i arange = _mm256_set_epi32(7, 6, 5, 4, 3, 2, 1, 0);
+    __m256 arange = _mm256_set_ps(7, 6, 5, 4, 3, 2, 1, 0);
     __m256i one = _mm256_set1_epi32(1);
 
     float scale = 2.5f / float(img_size);
     __m256 scale_v = _mm256_set1_ps(scale);
-    __m256 img_size_v = _mm256_set1_ps(float(img_size));
     __m256 radius = _mm256_set1_ps(4.0f);
+    __m256 ox = _mm256_set1_ps(-2.0f);
 
     __m256i max_iters_v = _mm256_set1_epi32(max_iters);
 
     for (uint64_t i = 0; i < img_size; ++i)
     {
-        __m256 cy = _mm256_set1_ps((float(i) / img_size) * 2.5f - 1.25f);
+        __m256 cy = _mm256_set1_ps(float(i) * scale - 1.25f);
 
         for (uint64_t j = 0; j < img_size; j += 8)
         {
             // Get the plane coordinate X for the image pixel.
             // float cx = (float(j) / float(img_size)) * 2.5f - 2.0f;
             // float cy = (float(i) / float(img_size)) * 2.5f - 1.25f;
-            __m256i j_v = _mm256_add_epi32(_mm256_set1_epi32(j), arange);
-            __m256 j_f = _mm256_div_ps(_mm256_cvtepi32_ps(j_v), img_size_v);
-            __m256 c0 = _mm256_mul_ps(j_f, _mm256_set1_ps(2.5f));
-            __m256 cx = _mm256_add_ps(c0, _mm256_set1_ps(-2.0f));
+            __m256 j_v = _mm256_add_ps(_mm256_set1_ps(float(j)), arange);
+            __m256 j_f = _mm256_mul_ps(j_v, scale_v);
+            __m256 cx = _mm256_add_ps(j_f, ox);
 
             // Innermost loop: start the recursion from z = 0.
             // float x2 = 0.0f;
@@ -99,16 +98,13 @@ void mandelbrot_cpu_vector(uint32_t img_size, uint32_t max_iters, uint32_t *out)
 
             __m256i iters = _mm256_set1_epi32(0);
 
-            __m256 mask = _mm256_castsi256_ps(_mm256_set1_epi32(-1));
-
             while (true)
             {
-                mask = _mm256_and_ps(mask, _mm256_and_ps(
-                                               _mm256_cmp_ps(_mm256_add_ps(x2, y2), radius, _CMP_LE_OS),
-                                               _mm256_castsi256_ps(_mm256_cmpgt_epi32(max_iters_v, iters))));
-
+                __m256 mask = _mm256_and_ps(_mm256_castsi256_ps(_mm256_cmpgt_epi32(max_iters_v, iters)),
+                                            _mm256_cmp_ps(_mm256_add_ps(x2, y2), radius, _CMP_LE_OQ));
                 if (!_mm256_movemask_ps(mask))
                     break;
+
                 iters = _mm256_add_epi32(iters, _mm256_and_si256(_mm256_castps_si256(mask), one));
 
                 // float x = x2 - y2 + cx;
@@ -121,10 +117,11 @@ void mandelbrot_cpu_vector(uint32_t img_size, uint32_t max_iters, uint32_t *out)
 
                 __m256 x2_sub_y2 = _mm256_sub_ps(x2, y2);
                 __m256 x = _mm256_add_ps(x2_sub_y2, cx);
-                __m256 cy_sub_y2 = _mm256_sub_ps(cy, y2);
+
                 __m256 w_sub_x2 = _mm256_sub_ps(w, x2);
                 __m256 w_sub_x2_y2 = _mm256_sub_ps(w_sub_x2, y2);
                 __m256 y = _mm256_add_ps(w_sub_x2_y2, cy);
+
                 __m256 z = _mm256_add_ps(x, y);
                 x2 = _mm256_mul_ps(x, x);
                 y2 = _mm256_mul_ps(y, y);
