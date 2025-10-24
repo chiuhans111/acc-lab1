@@ -1,0 +1,20 @@
+# Bazel build outputs
+# The main directory for Bazel build outputs.
+bazel-bin/
+bazel-out/
+bazel-testlogs/
+
+# Symlinks created by Bazel
+bazel-*
+
+
+# IDE files 
+.vscode/
+
+# Operating system files
+.DS_Store
+Thumbs.db
+
+# generated files
+/out/*
+!/out/
