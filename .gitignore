@@ -17,4 +17,4 @@ Thumbs.db
 
 # generated files
 /out/*
-!/out/
+!/out/.gitkeep
