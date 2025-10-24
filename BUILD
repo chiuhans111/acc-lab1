@@ -5,6 +5,7 @@ cc_binary(
     copts = [
         "-std=c++17",
         "-O3",
+        "-ffast-math",
         "-march=native",
     ],
 )
@@ -14,7 +15,7 @@ genrule(
     name = "mandelbrot_gpu_obj",
     srcs = ["mandelbrot_gpu.cu"],
     outs = ["mandelbrot_gpu.o"],
-    cmd = "nvcc -I/usr/local/cuda/include -std=c++17 -O3 -c $< -o $@",
+    cmd = "nvcc -I/usr/local/cuda/include -std=c++17 -O3 --use_fast_math -c $< -o $@",
 )
 
 cc_binary(
@@ -25,4 +26,3 @@ cc_binary(
         "-lcudart",
     ],
 )
-
