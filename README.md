@@ -5,6 +5,9 @@ Run code: (hacky way)
 ```sh
 # CPU
 bazel run --run_under="cd $PWD &&" //:mandelbrot_cpu
+```
+
+```sh
 # GPU
 bazel run --run_under="cd $PWD &&" //:mandelbrot_gpu
 ```
