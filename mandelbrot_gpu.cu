@@ -57,8 +57,8 @@ __global__ void mandelbrot_gpu_vector(
 ) {
     /* your (GPU) code here... */
     /* your (GPU) code here... */
-    for (uint64_t i = threadIdx.x; i < img_size; i+=32) {
-        for (uint64_t j = 0; j < img_size; j+=1) {
+    for (uint64_t i = 0; i < img_size; i+=1) {
+        for (uint64_t j = threadIdx.x; j < img_size; j+=32) {
             // Get the plane coordinate X for the image pixel.
             float cx = (float(j) / float(img_size)) * 2.5f - 2.0f;
             float cy = (float(i) / float(img_size)) * 2.5f - 1.25f;
